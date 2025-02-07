@@ -1,0 +1,88 @@
+import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
+
+const app = express();
+const server = createServer(app); // Create an HTTP server
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow frontend connections
+  },
+});
+
+// Mock Events Data
+const mockEvents = [
+  {
+    id: "1",
+    name: "Tech Conference 2024",
+    description: "Join us for the biggest tech conference of the year",
+    date: "2024-04-15T09:00:00",
+    category: "Technology",
+    attendeeCount: 250,
+    bannerImage: "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
+    status: "upcoming",
+  },
+  {
+    id: "2",
+    name: "Music Festival",
+    description: "A weekend of amazing live performances",
+    date: "2024-05-20T18:00:00",
+    category: "Music",
+    attendeeCount: 500,
+    bannerImage: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea",
+    status: "upcoming",
+  },
+  {
+    id: "3",
+    name: "Music Festival",
+    description: "A weekend of amazing live performances",
+    date: "2024-05-20T18:00:00",
+    category: "Music",
+    attendeeCount: 500,
+    bannerImage: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea",
+    status: "upcoming",
+  },
+  {
+    id: "4",
+    name: "Music Festival",
+    description: "A weekend of amazing live performances",
+    date: "2024-05-20T18:00:00",
+    category: "Music",
+    attendeeCount: 500,
+    bannerImage: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea",
+    status: "upcoming",
+  },
+
+  
+];
+
+app.get("/", (req, res) => {
+  res.send("Socket.io Server Running");
+});
+
+io.on("connection", (socket) => {
+  console.log("A user connected:", socket.id);
+
+  // Send mockEvents to the newly connected client
+  socket.emit("initialEvents", mockEvents);
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected");
+  });
+
+  // Example event emitting
+  socket.on("updateAttendee", (data) => {
+    // Update the mockEvents array (if needed)
+    const updatedEvents = mockEvents.map((event) =>
+      event.id === data.eventId ? { ...event, attendeeCount: data.count } : event
+    );
+
+    // Broadcast updated event to all clients
+    io.emit("attendeeUpdate", data);
+  });
+});
+
+const PORT = 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
