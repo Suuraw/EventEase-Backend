@@ -1,66 +1,148 @@
 import { Server } from "socket.io";
 import Event from "../model&&schema/schemaXmodel.js";
-// Mock Events Data
-// const mockEvents = [
-//   {
-//     id: "1",
-//     name: "Tech Conference 2024",
-//     description: "Join us for the biggest tech conference of the year",
-//     date: "2024-04-15T09:00:00",
-//     category: "Technology",
-//     attendeeCount: 250,
-//     bannerImage: "https://images.unsplash.com/photo-1540575467063-178a50c2df87",
-//     status: "upcoming",
-//   },
-//   {
-//     id: "2",
-//     name: "Music Festival",
-//     description: "A weekend of amazing live performances",
-//     date: "2024-05-20T18:00:00",
-//     category: "Music",
-//     attendeeCount: 500,
-//     bannerImage: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea",
-//     status: "upcoming",
-//   }
-// ];
+
+let io;
 
 export const connectSocket = (server) => {
   try {
-    const io = new Server(server, {
+    io = new Server(server, {
       cors: {
-        origin: "*", // Allow frontend connections
+        origin: "*",
       },
     });
 
-    io.on("connection", async(socket) => {
+    io.on("connection", async (socket) => {
       console.log("A user connected:", socket.id);
+      const userId = socket.handshake.auth.userId;
+      console.log("User ID from auth:", userId);
 
-      // Send mockEvents to the newly connected client
       try {
-        const mockEvents=await Event.find();
-        socket.emit("initialEvents", mockEvents);
-      } catch (error) {
-        
-      }
+        // Only send user-specific events initially if userId exists
+        if (userId) {
+          const userEvents = await Event.find({ creator: userId });
+          console.log("Initial user events found:", userEvents.length);
+          socket.emit("initialEvents", userEvents);
+        } else {
+          // If no userId, send all events (for public view)
+          const allEvents = await Event.find();
+          socket.emit("initialEvents", allEvents);
+        }
 
-      socket.on("disconnect", () => {
-        console.log("User disconnected");
-      });
+        // Handle user-specific event requests (for MyEvents)
+        socket.on("getMyEvents", async (requestedUserId) => {
+          console.log("getMyEvents requested for userId:", requestedUserId);
+          try {
+            if (!requestedUserId) {
+              console.log("No userId provided for getMyEvents");
+              socket.emit("error", { message: "User ID is required" });
+              return;
+            }
 
-      // Example event emitting
-      socket.on("updateAttendee", (data) => {
-        // Update the mockEvents array (if needed)
-        mockEvents.forEach((event) => {
-          if (event.id === data.eventId) {
-            event.attendeeCount = data.count;
+            const createdEvents = await Event.find({
+              creator: requestedUserId,
+            });
+            console.log(
+              `Found ${createdEvents.length} events for user ${requestedUserId}`
+            );
+
+            socket.emit("myEvents", {
+              created: createdEvents,
+            });
+          } catch (error) {
+            console.error("Error fetching user events:", error);
+            socket.emit("error", { message: "Error fetching your events" });
           }
         });
 
-        // Broadcast updated event to all clients
-        io.emit("attendeeUpdate", data);
+        // Handle user-specific event requests (for Dashboard)
+        socket.on("getUserEvents", async (requestedUserId) => {
+          console.log("getUserEvents requested for userId:", requestedUserId);
+          try {
+            if (!requestedUserId) {
+              console.log("No userId provided for getUserEvents");
+              socket.emit("error", { message: "User ID is required" });
+              return;
+            }
+
+            const userEvents = await Event.find({ creator: requestedUserId });
+            console.log(
+              `Found ${userEvents.length} events for user ${requestedUserId}`
+            );
+
+            socket.emit("userEvents", userEvents);
+          } catch (error) {
+            console.error("Error fetching user events:", error);
+            socket.emit("error", { message: "Error fetching user events" });
+          }
+        });
+
+        // Handle event updates
+        socket.on("eventUpdate", async (eventData) => {
+          try {
+            const updatedEvent = await Event.findByIdAndUpdate(
+              eventData._id,
+              eventData,
+              { new: true }
+            );
+
+            // Emit to creator only
+            if (updatedEvent.creator.toString() === userId) {
+              socket.emit("eventUpdate", updatedEvent);
+              socket.emit("myEventUpdate", updatedEvent);
+            }
+          } catch (error) {
+            console.error("Error updating event:", error);
+            socket.emit("error", { message: "Error updating event" });
+          }
+        });
+
+       
+        // Handle event deletion
+        socket.on("deleteEvent", async (eventId) => {
+          try {
+            console.log(`Deleting event with ID: ${eventId}`);
+
+            const deletedEvent = await Event.findByIdAndDelete(eventId);
+
+            if (!deletedEvent) {
+              console.log("Event not found.");
+              socket.emit("error", { message: "Event not found" });
+              return;
+            }
+
+            console.log(`Event deleted: ${eventId}`);
+
+            // Notify all clients to remove the deleted event
+            io.emit("MyEventDeleted", eventId);
+          } catch (error) {
+            console.error("Error deleting event:", error);
+            socket.emit("error", { message: "Error deleting event" });
+          }
+        });
+
+        // Join user-specific room for targeted updates
+        if (userId) {
+          socket.join(`user:${userId}`);
+          console.log(`User ${userId} joined their specific room`);
+        }
+      } catch (error) {
+        console.error("Error in socket connection:", error);
+        socket.emit("error", { message: "Server error" });
+      }
+
+      socket.on("disconnect", () => {
+        console.log("User disconnected:", socket.id);
+        if (userId) {
+          socket.leave(`user:${userId}`);
+          console.log(`User ${userId} left their specific room`);
+        }
       });
     });
+
+    return io;
   } catch (error) {
     console.error("Socket Connection Error:", error);
   }
 };
+
+export const getSocketInstance = () => io;

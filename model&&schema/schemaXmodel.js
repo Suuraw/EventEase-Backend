@@ -31,6 +31,14 @@ const eventSchema = new mongoose.Schema({
     enum: ["upcoming", "ongoing", "completed", "cancelled"],
     default: "upcoming",
   },
+  location: {
+    type: String,
+  },
+  creator: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
 }, { timestamps: true });
 
 const Event = mongoose.model("Event", eventSchema);

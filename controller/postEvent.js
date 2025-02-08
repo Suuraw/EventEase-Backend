@@ -1,30 +1,38 @@
-import multer from "multer";
 import { uploadImage } from "./postImg.js";
 import Event from "../model&&schema/schemaXmodel.js";
 import { upload } from "../middleware/multerConfig.js";
+import { getSocketInstance } from "./socketIoConnection.js"; // Import io instance
 
 export const createEvent = [
   upload.single("bannerImage"),
   async (req, res) => {
     try {
-      const { name, description, date, category, attendeeCount, status } = req.body;
+      const { name, description, date, category, attendeeCount, status,location,creator } =
+        req.body;
 
-      // Validate required fields
-      if (!name || !description || !date || !category || !attendeeCount || !status) {
+      if (
+        !name ||
+        !description ||
+        !date ||
+        !category ||
+        !attendeeCount ||
+        !status
+      ) {
         return res.status(400).json({ error: "All fields are required" });
       }
 
-      // Handle image upload
       let imageUrl;
       if (req.file) {
-        imageUrl = await uploadImage(req.file.buffer); // Upload to Cloudinary
-      } else if (req.body.bannerImage && req.body.bannerImage.startsWith("https")) {
-        imageUrl = req.body.bannerImage; // Use URL if provided
+        imageUrl = await uploadImage(req.file.buffer);
+      } else if (
+        req.body.bannerImage &&
+        req.body.bannerImage.startsWith("https")
+      ) {
+        imageUrl = req.body.bannerImage;
       } else {
-        return res.status(400).json({ error: "Banner image is required (file or URL)" });
+        return res.status(400).json({ error: "Banner image is required" });
       }
 
-      // Save to database
       const newEvent = new Event({
         name,
         description,
@@ -33,10 +41,21 @@ export const createEvent = [
         attendeeCount: parseInt(attendeeCount, 10),
         bannerImage: imageUrl,
         status,
+        location,
+        creator
       });
 
       await newEvent.save();
-      res.status(201).json({ message: "Event created successfully", event: newEvent });
+
+      // Emit new event to all clients
+      const io = getSocketInstance();
+      if (io) {
+        io.emit("newEvent", newEvent);
+      }
+
+      res
+        .status(201)
+        .json({ message: "Event created successfully", event: newEvent });
     } catch (error) {
       console.error("Error creating event:", error);
       res.status(500).json({ error: "Server error" });
